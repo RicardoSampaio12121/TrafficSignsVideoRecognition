@@ -8,6 +8,24 @@ Author: Claudio Silva
 // Caso contrário não aparecem mensagens de erro.
 #define VC_DEBUG
 
+typedef enum {
+	INDEFINIDO,
+	VIRAR_E, // Sentido obrigatório (esquerda)
+	VIRAR_D,// Sentido obrigatório (direita)
+	AUTO_ESTRADA, // Auto-estrada
+	AUTOMOVEIS_MOTOCICLOS, // Via reservada a automóveis e motociclos
+	SENTIDO_PROIBIDO, // Sentido proibido
+	STOP, // Paragem obrigatória em cruzamentos ou entroncamentos
+} Sinal;
+// Sinal sinal = VIRAR_E;
+
+typedef enum {
+	INDEFINIDA,
+	AZUL,
+	VERMELHO,
+} Cor;
+// Cor cor = AZUL;
+
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                   ESTRUTURA DE UMA IMAGEM
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -19,6 +37,21 @@ typedef struct {
 	int levels;				// Binário=1; Cinzentos [1,255]; RGB [1,255]
 	int bytesperline;		// width * channels
 } IVC;                      // IVC = Imagem de Visão por Computador
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//                   ESTRUTURA DE UM BLOB (OBJECTO)
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#define MAX(a,b) (a > b ? a : b) // Macro para calcular o máximo
+#define MIN(a,b) (a < b ? a : b) // Macro para calcular o mínimo
+
+typedef struct {
+	int x, y, width, height;	// Caixa Delimitadora (Bounding Box)
+	// x e y são o canto superior esquerdo da caixa delimitadora
+	int area;					// Área
+	int xc, yc;					// Centro-de-massa (xc = x centro; yc = y centro)
+	int perimeter;				// Perímetro
+	int label;					// Etiqueta
+} OVC; // OVC = Objeto de Visão por Computador
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                    PROTÓTIPOS DE FUNÇÕES
@@ -57,6 +90,10 @@ int vc_bgr_to_hsv(IVC* src, IVC* dst);
 int vc_hsv_segmentation(IVC* src, IVC* dst, int hmin, int hmax, int smin,
 	int smax, int vmin, int vmax);
 
+// FUNÇÃO: SELECIONA PARTES DE UMA IMAGEM DE ACORDO COM A COR ESCOLHIDA (DOIS INTERVALOS DE TONALIDADE)
+int vc_hsv_red_segmentation(IVC* src, IVC* dst, int hmin1, int hmax1, int hmin2, int hmax2,
+	int smin, int smax, int vmin, int vmax);
+
 // FUNÇÃO: CONVERTE IMAGEM EM ESCALA DE CINZENTOS PARA IMAGEM RGB (imagens térmicas)
 int vc_scale_gray_to_rgb(IVC* src, IVC* dst);
 
@@ -81,37 +118,27 @@ int vc_binary_open(IVC* src, IVC* dst, int kernelErosion, int kernelDilation);
 // FUNÇÃO: REALIZA O FECHO BINÁRIA
 int vc_binary_close(IVC* src, IVC* dst, int kernelErosion, int kernelDilation);
 
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//                   ESTRUTURA DE UM BLOB (OBJECTO)
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-#define MAX(a,b) (a > b ? a : b) // Macro para calcular o máximo
-#define MIN(a,b) (a < b ? a : b) // Macro para calcular o mínimo
-
-typedef struct {
-	int x, y, width, height;	// Caixa Delimitadora (Bounding Box)
-	// x e y são o canto superior esquerdo do blob
-	int area;					// Área
-	int xc, yc;					// Centro-de-massa (xc = x centro; yc = y centro)
-	int perimeter;				// Perímetro
-	int label;					// Etiqueta
-} OVC; // OVC = Objeto de Visão por Computador
-
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//                    PROTÓTIPOS DE FUNÇÕES
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
 // Recebe imagem binária e devolve imagem em tons de cinzento (etiquetada)
 // nlabels = quantos objetos encontrou (apontador para poder alterar nlabels como vem em arg da função, 
 // tem de ser apontador para podermos alterar)
 OVC* vc_binary_blob_labelling(IVC* src, IVC* dst, int* nlabels);
 // Recebe imagem já etiquetada
-int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs);
+int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs, int *maiorBlob);
+
+// FUNÇÃO: MARCA O CENTRO DE MASSA E A CAIXA DELIMITADORA DE CADA BLOB NUMA NOVA IMAGEM
+int vc_mark_blobs(IVC* src, IVC* dst, OVC* blobs, int nblobs);
+
+// FUNÇÃO: MARCA A CAIXA DELIMITADORA DO BLOB COM MAIOR ÁREA NUMA NOVA IMAGEM
+int vc_marcarMaiorBlob(IVC* src, IVC* dst, OVC* blobs, int nblobs, int maiorBlob);
+
+// FUNÇÃO: IDENTIFICA O SINAL DE TRÂNSITO
+Sinal vc_identificarSinal(OVC* blobs, int nblobs, int maiorblob, Cor cor);
 
 // FUNÇÃO: EXIBE O HISTOGRAMA DE UMA IMAGEM EM TONS DE CINZENTO
 int vc_gray_histogram_show(IVC* src, IVC* dst);
 
 // FUNÇÃO: REALIZA A EQUALIZAÇÃO DE HISTOGRAMA DE UMA IMAGEM EM TONS DE CINZENTO
-int vc_gray_histogram_equalization(IVC* src, IVC *dst);
+int vc_gray_histogram_equalization(IVC* srcdst);
 
 // FUNÇÃO: DESENHA CONTORNOS DA IMAGEM EM TONS DE CINZENTO, UTILIZANDO OS OPERADORES DE PREWITT
 int vc_gray_edge_prewitt(IVC* src, IVC* dst, float th);
@@ -139,11 +166,3 @@ int vc_gray_highpass_filter(IVC* src, IVC* dst);
 
 // FUNÇÃO: APLICAÇÃO DO FILTRO BÁSICO (PASSA-ALTO)
 int vc_gray_highpass_filter_enhance(IVC* src, IVC* dst, int gain);
-
-int vc_mark_blobs(IVC* src, IVC* dst, OVC* blobs, int nblobs);
-
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//                    IDENTIFICAÇÃO DE SINAIS
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-int vc_transit_signal_identifier(IVC* src);

@@ -737,6 +737,57 @@ int OLD_vc_hsv_segmentation(IVC* src, IVC* dst, int hmin, int hmax, int smin,
 
 	// Verificação de erros
 	if ((width <= 0) || (height <= 0) || (data == NULL) || datadst == NULL) return 0;
+	if (width != dst->width || height != dst->height || channels != dst->channels) return 0;
+	if (channels != 3) return 0;
+
+	for (y = 0; y < height; y++)
+	{
+		for (x = 0; x < width; x++)
+		{
+			pos_src = y * bytesperline_src + x * channels;
+			pos_dst = y * bytesperline_dst + x * dst->channels;
+
+			hue = (int)((float)data[pos_src] / 255.0f * 360.0f);
+			saturation = (int)((float)data[pos_src + 1] / 255.0f * 100.0f);
+			value = (int)((float)data[pos_src + 2] / 255.0f * 100.0f);
+
+			if (hue >= hmin && hue <= hmax &&
+				saturation >= smin && saturation <= smax &&
+				value >= vmin && value <= vmax)
+			{
+				datadst[pos_dst] = (unsigned char)255;
+				datadst[pos_dst + 1] = (unsigned char)255;
+				datadst[pos_dst + 2] = (unsigned char)255;
+			}
+			else
+			{
+				datadst[pos_dst] = (unsigned char)0;
+				datadst[pos_dst + 1] = (unsigned char)0;
+				datadst[pos_dst + 2] = (unsigned char)0;
+			}
+		}
+	}
+
+	return 1;
+}
+
+// Selecionar partes de uma imagem de acordo com a cor escolhida
+int vc_hsv_segmentation(IVC* src, IVC* dst, int hmin, int hmax, int smin,
+	int smax, int vmin, int vmax)
+{
+	unsigned char* data = (unsigned char*)src->data;
+	unsigned char* datadst = (unsigned char*)dst->data;
+	int width = src->width;
+	int height = src->height;
+	int channels = src->channels;
+	int hue, saturation, value;
+	long int pos_src, pos_dst;
+	int x, y;
+	int bytesperline_src = src->width * src->channels;
+	int bytesperline_dst = dst->width * dst->channels;
+
+	// Verificação de erros
+	if ((width <= 0) || (height <= 0) || (data == NULL) || datadst == NULL) return 0;
 	if (width != dst->width || height != dst->height) return 0;
 	if (channels != 3 || dst->channels != 1) return 0;
 
@@ -762,9 +813,9 @@ int OLD_vc_hsv_segmentation(IVC* src, IVC* dst, int hmin, int hmax, int smin,
 	return 1;
 }
 
-// Selecionar partes de uma imagem de acordo com a cor escolhida
-int vc_hsv_segmentation(IVC* src, IVC* dst, int hmin, int hmax, int smin,
-	int smax, int vmin, int vmax)
+// Selecionar partes de uma imagem de acordo com a cor escolhida (dois intervalos de tonalidade)
+int vc_hsv_red_segmentation(IVC* src, IVC* dst, int hmin1, int hmax1, int hmin2, int hmax2,
+	int smin, int smax, int vmin, int vmax)
 {
 	unsigned char* data = (unsigned char*)src->data;
 	unsigned char* datadst = (unsigned char*)dst->data;
@@ -779,41 +830,28 @@ int vc_hsv_segmentation(IVC* src, IVC* dst, int hmin, int hmax, int smin,
 
 	// Verificação de erros
 	if ((width <= 0) || (height <= 0) || (data == NULL) || datadst == NULL) return 0;
-	if (width != dst->width || height != dst->height || channels != dst->channels) return 0;
-	if (channels != 3) return 0;
+	if (width != dst->width || height != dst->height) return 0;
+	if (channels != 3 || dst->channels != 1) return 0;
 
 	for (y = 0; y < height; y++)
 	{
 		for (x = 0; x < width; x++)
 		{
 			pos_src = y * bytesperline_src + x * channels;
-			pos_dst = y * bytesperline_dst + x * dst->channels;
+			pos_dst = y * bytesperline_dst + x; // * canais = 1
 
 			hue = (int)((float)data[pos_src] / 255.0f * 360.0f);
 			saturation = (int)((float)data[pos_src + 1] / 255.0f * 100.0f);
 			value = (int)((float)data[pos_src + 2] / 255.0f * 100.0f);
 
-			if (hue >= hmin && hue <= hmax &&
+			if (((hue >= hmin1 && hue <= hmax1) || (hue >= hmin2 && hue <= hmax2)) &&
 				saturation >= smin && saturation <= smax &&
 				value >= vmin && value <= vmax)
-			{
-
-				datadst[pos_dst] = (unsigned char)0;
-				datadst[pos_dst + 1] = (unsigned char)0;
-				datadst[pos_dst + 2] = (unsigned char)0;
-
-				
-			}
-			else
-			{
 				datadst[pos_dst] = (unsigned char)255;
-				datadst[pos_dst + 1] = (unsigned char)255;
-				datadst[pos_dst + 2] = (unsigned char)255;
-			}
+			else datadst[pos_dst] = (unsigned char)0;
+
 		}
 	}
-
-	return 1;
 }
 
 // Converter imagem em escala de cinzentos para imagem RGB (térmica)
@@ -1178,10 +1216,10 @@ OVC* vc_binary_blob_labelling(IVC* src, IVC* dst, int* nlabels)
 	// tmplabel = var auxiliar para percorrer tabela de etiquetas (para ser mais fácil de ler: usa um nome diferente)
 	OVC* blobs; // Apontador para array de blobs (objectos) que será retornado desta função.
 
-
 	// Verificação de erros
 	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
 	if ((src->width != dst->width) || (src->height != dst->height) || (src->channels != dst->channels)) return NULL;
+	if (channels != 1) return NULL;
 
 	// Copia dados da imagem binária para imagem grayscale
 	memcpy(datadst, datasrc, bytesperline * height);
@@ -1207,7 +1245,7 @@ OVC* vc_binary_blob_labelling(IVC* src, IVC* dst, int* nlabels)
 		datadst[0 * bytesperline + x * channels] = 0; // Limpa rebordo horizontal superior
 		datadst[(height - 1) * bytesperline + x * channels] = 0; // Limpa rebordo horizontal inferior
 	}
-	
+
 	// Efetua a etiquetagem
 	// (Para cada píxel...)
 	for (y = 1; y < height - 1; y++)
@@ -1232,7 +1270,8 @@ OVC* vc_binary_blob_labelling(IVC* src, IVC* dst, int* nlabels)
 				{
 					datadst[posX] = label; // Encontrou um novo objeto (atribui-lhe nova etiqueta)
 					labeltable[label] = label; // Adiciona label à tabela das etiquetas
-					label++;
+					//label++; // Limitar aqui ???
+					if (label < 255) label++;
 				}
 				else // píxel X = etiqueta de vizinho A,B,C,D com menor valor (não incluindo 0)
 				{
@@ -1352,13 +1391,9 @@ OVC* vc_binary_blob_labelling(IVC* src, IVC* dst, int* nlabels)
 		}
 	}
 
-
-
 	// Se não há blobs
-	if (*nlabels == 0) 
-	{
-		return NULL;
-	}
+	if (*nlabels == 0) return NULL;
+
 	// Cria lista de blobs (objectos) e preenche a etiqueta
 	blobs = (OVC*)calloc((*nlabels), sizeof(OVC));
 	if (blobs != NULL)
@@ -1372,14 +1407,14 @@ OVC* vc_binary_blob_labelling(IVC* src, IVC* dst, int* nlabels)
 
 // Cálculos relacionados com blobs
 // NOTA: recebe imagem com os labels (src) a partir da função vc_binary_blob_labelling
-int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs)
+int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs, int *maiorBlob)
 {
 	unsigned char* data = (unsigned char*)src->data;
 	int width = src->width;
 	int height = src->height;
 	int bytesperline = src->bytesperline;
 	int channels = src->channels;
-	int x, y, i;
+	int x, y, i, blobAreaMax, blobMaior;
 	long int pos;
 	int xmin, ymin, xmax, ymax;
 	long int sumx, sumy;
@@ -1387,10 +1422,29 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs)
 	// Verificação de erros
 	if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL)) return 0;
 	if (channels != 1) return 0;
+	if (!blobs) return 0;
+
+
+	// Inicializações para calcular a blob maior
+	blobAreaMax = blobs[0].area;
+	blobMaior = 0;
+
 
 	// Percorre cada blob
 	for (i = 0; i < nblobs; i++)
 	{
+		// Compara com o maior até agora
+		if (blobs[i].area > blobAreaMax)
+		{
+			// Este blob é agora o maior
+			blobAreaMax = blobs[i].area;
+			blobMaior = i;
+		}
+	}
+
+	*maiorBlob = blobMaior;
+
+
 		// Inicialização nos extremos possíveis
 		xmin = width - 1;
 		ymin = height - 1;
@@ -1400,7 +1454,7 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs)
 		sumx = 0;
 		sumy = 0;
 
-		blobs[i].area = 0;
+		blobs[blobMaior].area = 0;
 
 		// Percorre cada píxel da imagem etiquetada
 		for (y = 1; y < height - 1; y++)
@@ -1410,10 +1464,10 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs)
 				pos = y * bytesperline + x * channels;
 
 				// Se o píxel pertencer ao blob de que estamos à procura
-				if (data[pos] == blobs[i].label)
+				if (data[pos] == blobs[blobMaior].label)
 				{
 					// Área (= somatório do nº de píxeis do blob)
-					blobs[i].area++;
+					blobs[blobMaior].area++;
 
 					// Centro de Gravidade
 					sumx += x;
@@ -1427,30 +1481,238 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs)
 
 					// Perímetro (está a usar em "cruz", não conta os da diagonal
 					// Se pelo menos um dos quatro vizinhos não pertence ao mesmo label, então é um pixel de contorno
-					if ((data[pos - 1] != blobs[i].label) || (data[pos + 1] != blobs[i].label) || (data[pos - bytesperline] != blobs[i].label) || (data[pos + bytesperline] != blobs[i].label))
+					if ((data[pos - 1] != blobs[blobMaior].label) || (data[pos + 1] != blobs[blobMaior].label) || (data[pos - bytesperline] != blobs[blobMaior].label) || (data[pos + bytesperline] != blobs[blobMaior].label))
 					{
-						blobs[i].perimeter++;
+						blobs[blobMaior].perimeter++;
 					}
 				}
 			}
 		}
 
 		// Bounding Box
-		blobs[i].x = xmin;
-		blobs[i].y = ymin;
-		blobs[i].width = (xmax - xmin) + 1;
-		blobs[i].height = (ymax - ymin) + 1;
+		blobs[blobMaior].x = xmin;
+		blobs[blobMaior].y = ymin;
+		blobs[blobMaior].width = (xmax - xmin) + 1;
+		blobs[blobMaior].height = (ymax - ymin) + 1;
 
 		// Centro de Gravidade
 		//blobs[i].xc = (xmax - xmin) / 2;
 		//blobs[i].yc = (ymax - ymin) / 2; ** FALTA O round() em xc e yc
 		// x médio (média de todos os valores/coordenadas em x)
-		blobs[i].xc = sumx / MAX(blobs[i].area, 1); // Usa-se o MAX para nunca dar 0
+		blobs[blobMaior].xc = sumx / MAX(blobs[blobMaior].area, 1); // Usa-se o MAX para nunca dar 0
 		// y médio (média de todos os valores/coordenadas em y)
-		blobs[i].yc = sumy / MAX(blobs[i].area, 1);
+		blobs[blobMaior].yc = sumy / MAX(blobs[blobMaior].area, 1);
+	
+
+
+	return 1;
+}
+
+// Marcar o centro de massa e a caixa delimitadora de cada blob numa nova imagem (definido só para imagens a cores)
+int vc_mark_blobs(IVC* src, IVC* dst, OVC* blobs, int nblobs)
+{
+	unsigned char* datasrc = (unsigned char*)src->data;
+	unsigned char* datadst = (unsigned char*)dst->data;
+	int width = dst->width;
+	int height = dst->height;
+	int channels = dst->channels;
+	int bytesperline = src->bytesperline;
+	long int pos;
+	int x, y, i, blobXmin, blobXmax, blobYmin, blobYmax;
+
+	// Verificação de erros
+	if ((width <= 0) || (height <= 0) || (datasrc == NULL) || (datadst == NULL)) return 0;
+	if ((width != dst->width) || (height != dst->height) || (channels != dst->channels)) return 0;
+	if ((blobs == NULL) || (nblobs <= 0)) return 0;
+	if (channels != 3) return 0;
+
+	// Copia dados da imagem original para a nova imagem
+	memcpy(datadst, datasrc, bytesperline * height);
+
+	// Percorre cada blob
+	for (i = 0; i < nblobs; i++)
+	{
+		// Marcar o centro de massa
+		pos = blobs[i].yc * bytesperline + blobs[i].xc * channels;
+		/*
+		datadst[pos] = (unsigned char) 255;
+		datadst[pos + 1] = (unsigned char) 255;
+		datadst[pos + 2] = (unsigned char) 255;
+		*/
+		datadst[pos] = (unsigned char)255;
+		datadst[pos + 1] = (unsigned char)255;
+		datadst[pos + 2] = (unsigned char)255;
+		datadst[pos - 1] = (unsigned char)255;
+		datadst[pos - 2] = (unsigned char)255;
+		datadst[pos - 3] = (unsigned char)255;
+		datadst[pos + 3] = (unsigned char)255;
+		datadst[pos + 4] = (unsigned char)255;
+		datadst[pos + 5] = (unsigned char)255;
+		datadst[pos - bytesperline] = (unsigned char)255;
+		datadst[pos - bytesperline + 1] = (unsigned char)255;
+		datadst[pos - bytesperline + 2] = (unsigned char)255;
+		datadst[pos + bytesperline] = (unsigned char)255;
+		datadst[pos + bytesperline + 1] = (unsigned char)255;
+		datadst[pos + bytesperline + 2] = (unsigned char)255;
+
+		// Coordenadas da caixa delimitadora
+		blobYmin = blobs[i].y;
+		blobYmax = blobYmin + blobs[i].height - 1;
+		blobXmin = blobs[i].x;
+		blobXmax = blobXmin + blobs[i].width - 1;
+
+		// Marcar a caixa delimitadora
+		// Limites verticais
+		for (y = blobYmin; y <= blobYmax; y++)
+		{
+			// Limite esquerdo
+			pos = y * bytesperline + blobXmin * channels;
+			datadst[pos] = (unsigned char)255;
+			datadst[pos + 1] = (unsigned char)255;
+			datadst[pos + 2] = (unsigned char)255;
+
+			// Limite direito
+			pos = y * bytesperline + blobXmax * channels;
+			datadst[pos] = (unsigned char)255;
+			datadst[pos + 1] = (unsigned char)255;
+			datadst[pos + 2] = (unsigned char)255;
+		}
+		// Limites horizontais
+		for (x = blobXmin; x <= blobXmax; x++)
+		{
+			// Limite superior
+			pos = blobYmin * bytesperline + x * channels;
+			datadst[pos] = (unsigned char)255;
+			datadst[pos + 1] = (unsigned char)255;
+			datadst[pos + 2] = (unsigned char)255;
+
+			// Limite inferior
+			pos = blobYmax * bytesperline + x * channels;
+			datadst[pos] = (unsigned char)255;
+			datadst[pos + 1] = (unsigned char)255;
+			datadst[pos + 2] = (unsigned char)255;
+		}
 	}
 
 	return 1;
+}
+
+// Marcar a caixa delimitadora do blob com maior área numa nova imagem (definido só para imagens a cores)
+int vc_marcarMaiorBlob(IVC* src, IVC* dst, OVC* blobs, int nblobs, int maiorBlob)
+{
+	unsigned char* datasrc = (unsigned char*)src->data;
+	unsigned char* datadst = (unsigned char*)dst->data;
+	int width = dst->width;
+	int height = dst->height;
+	int channels = dst->channels;
+	int bytesperline = src->bytesperline;
+	long int pos;
+	int x, y, i, blobXmin, blobXmax, blobYmin, blobYmax, blobAreaMax, blobMaior;
+
+	// Verificação de erros
+	if ((width <= 0) || (height <= 0) || (datasrc == NULL) || (datadst == NULL)) return 0;
+	if ((width != dst->width) || (height != dst->height) || (channels != dst->channels)) return 0;
+	if ((blobs == NULL) || (nblobs <= 0)) return 0;
+	if (channels != 3) return 0;
+
+	// Copia dados da imagem original para a nova imagem
+	memcpy(datadst, datasrc, bytesperline * height);
+
+	// Coordenadas da caixa delimitadora
+	blobYmin = blobs[maiorBlob].y;
+	blobYmax = blobYmin + blobs[maiorBlob].height - 1;
+	blobXmin = blobs[maiorBlob].x;
+	blobXmax = blobXmin + blobs[maiorBlob].width - 1;
+
+	// Marcar a caixa delimitadora
+	// Limites verticais
+	for (y = blobYmin; y <= blobYmax; y++)
+	{
+		// Limite esquerdo
+		pos = y * bytesperline + blobXmin * channels;
+		datadst[pos] = (unsigned char)0;
+		datadst[pos + 1] = (unsigned char)0;
+		datadst[pos + 2] = (unsigned char)0;
+
+		// Limite direito
+		pos = y * bytesperline + blobXmax * channels;
+		datadst[pos] = (unsigned char)0;
+		datadst[pos + 1] = (unsigned char)0;
+		datadst[pos + 2] = (unsigned char)0;
+	}
+	// Limites horizontais
+	for (x = blobXmin; x <= blobXmax; x++)
+	{
+		// Limite superior
+		pos = blobYmin * bytesperline + x * channels;
+		datadst[pos] = (unsigned char)0;
+		datadst[pos + 1] = (unsigned char)0;
+		datadst[pos + 2] = (unsigned char)0;
+
+		// Limite inferior
+		pos = blobYmax * bytesperline + x * channels;
+		datadst[pos] = (unsigned char)0;
+		datadst[pos + 1] = (unsigned char)0;
+		datadst[pos + 2] = (unsigned char)0;
+	}
+
+	return 1;
+}
+
+// Identificar a forma do maior blob (sinal)
+Sinal vc_identificarSinal(OVC* blobs, int nblobs, int maiorblob, Cor cor)
+{
+	float perimetroCaixa, perimetroBlob, proporcaoPerimetros;
+	int centroXCaixa;
+	// Inicialização do sinal
+	Sinal sinal = INDEFINIDO;
+
+	// Verificação de erros
+	if ((blobs == NULL) || (nblobs <= 0)) return INDEFINIDO;
+	if (maiorblob >= nblobs) return INDEFINIDO;
+	if (cor == INDEFINIDA) return INDEFINIDO;
+
+	// Divisão do perímetro do maior blob pela área da caixa delimitadora
+	perimetroCaixa = blobs[maiorblob].width + blobs[maiorblob].height;
+	perimetroBlob = blobs[maiorblob].perimeter;
+	proporcaoPerimetros = perimetroBlob / perimetroCaixa;
+
+	// Se for um sinal azul
+	if (cor == AZUL)
+	{
+		// (Valores aproximados +/- 0.4)
+
+		// Obrigatório virar à direita/esquerda: proporção de perímetros = 2.5
+		if (proporcaoPerimetros >= 2.1f && proporcaoPerimetros < 2.9f)
+		{
+			// X central da caixa delimitadora
+			centroXCaixa = blobs[maiorblob].x + blobs[maiorblob].width / 2;
+
+			// Se o centro de massa está à esquerda do centro da caixa delimitadora... 
+			if (blobs[maiorblob].xc < centroXCaixa) sinal = VIRAR_E;
+			else sinal = VIRAR_D;
+		}
+
+		// Automóveis e motociclos: proporção de perímetros = 3.3
+		else if (proporcaoPerimetros >= 2.9f && proporcaoPerimetros <= 3.7f) sinal = AUTOMOVEIS_MOTOCICLOS;
+
+		// Auto-estrada: proporção de perímetros = 4.5
+		else if (proporcaoPerimetros >= 4.1f && proporcaoPerimetros <= 4.9f) sinal = AUTO_ESTRADA;
+	}
+
+	else if (cor == VERMELHO)
+	{
+		// Sentido proibido: proporção de perímetros = 2.4
+		if (proporcaoPerimetros >= 2.0f && proporcaoPerimetros < 2.8f) sinal = SENTIDO_PROIBIDO;
+
+		// STOP: proporção de perímetros = 3.2
+		else if (proporcaoPerimetros >= 2.8f && proporcaoPerimetros < 3.6f) sinal = STOP;
+	}
+
+	// Identificar a forma de acordo com o cálculo anterior
+	//printf("Razao Perimetros = %f\n\n", proporcaoPerimetros);
+
+	return sinal;
 }
 
 // Exibir o histograma de uma imagem em tons de cinzento
@@ -1601,9 +1863,9 @@ int vc_gray_edge_prewitt(IVC* src, IVC* dst, float th)
 	if (channels != 1) return 0;
 
 	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++) // não devia ser height - 1?
+	for (y = 1; y < height - 1; y++) // não devia ser height - 1?
 	{
-		for (x = 1; x < width; x++)
+		for (x = 1; x < width - 1; x++)
 		{
 			pos = y * bytesperline + x * channels;
 
@@ -1664,9 +1926,9 @@ int vc_gray_edge_sobel(IVC* src, IVC* dst, float th)
 	if (channels != 1) return 0;
 
 	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++)
+	for (y = 1; y < height - 1; y++)
 	{
-		for (x = 1; x < width; x++)
+		for (x = 1; x < width - 1; x++)
 		{
 			pos = y * bytesperline + x * channels;
 
@@ -1727,9 +1989,9 @@ int OLD_vc_gray_edge_laplace(IVC* src, IVC* dst)
 	if (channels != 1) return 0;
 
 	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++)
+	for (y = 1; y < height - 1; y++)
 	{
-		for (x = 1; x < width; x++)
+		for (x = 1; x < width - 1; x++)
 		{
 			pos = y * bytesperline + x * channels;
 
@@ -1783,9 +2045,9 @@ int vc_gray_edge_laplace(IVC* src, IVC* dst)
 	if (channels != 3) return 0;
 
 	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++)
+	for (y = 1; y < height - 1; y++)
 	{
-		for (x = 1; x < width; x++)
+		for (x = 1; x < width - 1; x++)
 		{
 			pos = y * bytesperline + x * channels;
 
@@ -1920,66 +2182,6 @@ int OLD_vc_gray_lowpass_median_filter(IVC* src, IVC* dst, int kernelsize)
 	// Verificação de erros
 	if ((width <= 0) || (height <= 0) || (data == NULL) || (datadst == NULL)) return 0;
 	if ((width != dst->width) || (height != dst->height) || (channels != dst->channels)) return 0;
-	if (channels != 1) return 0;
-	if ((kernelsize <= 1) || (kernelsize % 2 == 0)) return 0; // Kernel tem que ser > 1 e ímpar
-
-	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++)
-	{
-		for (x = 1; x < width; x++)
-		{
-			pos = y * bytesperline + x * channels;
-
-			// Percorrer Vizinhos (kernel)
-			for (ky = -offset; ky <= offset; ky++)
-			{
-				for (kx = -offset; kx <= offset; kx++)
-				{
-					if ((y + ky >= 0) && (y + ky < height) && (x + kx >= 0) && (x + kx < width))
-					{
-						posk = (y + ky) * bytesperline + (x + kx) * channels;
-
-						// Adicionar ao array de vizinhos
-						vizinhos[vizinhosCount] = (int)data[posk];
-						vizinhosCount++;
-					}
-				}
-			}
-
-			// Ordenar vizinhos de acordo com o seu valor
-			vc_insertionSort(vizinhos, vizinhosCount);
-
-			// Dar o valor central (mediana)
-			centro = tamanhoVizinhos / 2;
-
-			datadst[pos] = (unsigned char)vizinhos[centro];
-
-			vizinhosCount = 0;
-		}
-	}
-
-	free(vizinhos);
-
-	return 1;
-}
-
-// Filtro de mediana (passa-baixo) [só está feito para kernels ímpares]
-int vc_gray_lowpass_median_filter(IVC* src, IVC* dst, int kernelsize)
-{
-	unsigned char* data = (unsigned char*)src->data;
-	unsigned char* datadst = (unsigned char*)dst->data;
-	int width = src->width;
-	int height = src->height;
-	int bytesperline = src->bytesperline;
-	int channels = src->channels;
-	int x, y, kx, ky, vizinhosCount = 0, centro;
-	int offset = (kernelsize - 1) / 2, tamanhoVizinhos = pow(kernelsize, 2);
-	long int pos, posk;
-	int* vizinhos = (int*)malloc(sizeof(int) * tamanhoVizinhos);
-
-	// Verificação de erros
-	if ((width <= 0) || (height <= 0) || (data == NULL) || (datadst == NULL)) return 0;
-	if ((width != dst->width) || (height != dst->height) || (channels != dst->channels)) return 0;
 	if (channels != 3) return 0;
 	if ((kernelsize <= 1) || (kernelsize % 2 == 0)) return 0; // Kernel tem que ser > 1 e ímpar
 
@@ -2015,6 +2217,66 @@ int vc_gray_lowpass_median_filter(IVC* src, IVC* dst, int kernelsize)
 			datadst[pos] = (unsigned char)vizinhos[centro];
 			datadst[pos + 1] = (unsigned char)vizinhos[centro];
 			datadst[pos + 2] = (unsigned char)vizinhos[centro];
+
+			vizinhosCount = 0;
+		}
+	}
+
+	free(vizinhos);
+
+	return 1;
+}
+
+// Filtro de mediana (passa-baixo) [só está feito para kernels ímpares]
+int vc_gray_lowpass_median_filter(IVC* src, IVC* dst, int kernelsize)
+{
+	unsigned char* data = (unsigned char*)src->data;
+	unsigned char* datadst = (unsigned char*)dst->data;
+	int width = src->width;
+	int height = src->height;
+	int bytesperline = src->bytesperline;
+	int channels = src->channels;
+	int x, y, kx, ky, vizinhosCount = 0, centro;
+	int offset = (kernelsize - 1) / 2, tamanhoVizinhos = pow(kernelsize, 2);
+	long int pos, posk;
+	int* vizinhos = (int*)malloc(sizeof(int) * tamanhoVizinhos);
+
+	// Verificação de erros
+	if ((width <= 0) || (height <= 0) || (data == NULL) || (datadst == NULL)) return 0;
+	if ((width != dst->width) || (height != dst->height) || (channels != dst->channels)) return 0;
+	if (channels != 1) return 0;
+	if ((kernelsize <= 1) || (kernelsize % 2 == 0)) return 0; // Kernel tem que ser > 1 e ímpar
+
+	// Percorrer píxeis da imagem original
+	for (y = 1; y < height; y++)
+	{
+		for (x = 1; x < width; x++)
+		{
+			pos = y * bytesperline + x * channels;
+
+			// Percorrer Vizinhos (kernel)
+			for (ky = -offset; ky <= offset; ky++)
+			{
+				for (kx = -offset; kx <= offset; kx++)
+				{
+					if ((y + ky >= 0) && (y + ky < height) && (x + kx >= 0) && (x + kx < width))
+					{
+						posk = (y + ky) * bytesperline + (x + kx) * channels;
+
+						// Adicionar ao array de vizinhos
+						vizinhos[vizinhosCount] = (int)data[posk];
+						vizinhosCount++;
+					}
+				}
+			}
+
+			// Ordenar vizinhos de acordo com o seu valor
+			vc_insertionSort(vizinhos, vizinhosCount);
+
+			// Dar o valor central (mediana)
+			centro = tamanhoVizinhos / 2;
+
+			datadst[pos] = (unsigned char)vizinhos[centro];
 
 			vizinhosCount = 0;
 		}
@@ -2124,9 +2386,9 @@ int vc_gray_highpass_filter(IVC* src, IVC* dst)
 	if (channels != 1) return 0;
 
 	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++)
+	for (y = 1; y < height - 1; y++)
 	{
-		for (x = 1; x < width; x++)
+		for (x = 1; x < width - 1; x++)
 		{
 			pos = y * bytesperline + x * channels;
 
@@ -2182,9 +2444,9 @@ int vc_gray_highpass_filter_enhance(IVC* src, IVC* dst, int gain)
 	if (channels != 1) return 0;
 
 	// Percorrer píxeis da imagem original
-	for (y = 1; y < height; y++)
+	for (y = 1; y < height - 1; y++)
 	{
-		for (x = 1; x < width; x++)
+		for (x = 1; x < width - 1; x++)
 		{
 			pos = y * bytesperline + x * channels;
 
@@ -2225,99 +2487,4 @@ int vc_gray_highpass_filter_enhance(IVC* src, IVC* dst, int gain)
 	}
 
 	return 1;
-}
-
-int vc_mark_blobs(IVC* src, IVC* dst, OVC* blobs, int nblobs)
-{
-	unsigned char* datasrc = (unsigned char*)src->data;
-	unsigned char* datadst = (unsigned char*)dst->data;
-	int width = dst->width;
-	int height = dst->height;
-	int channels = dst->channels;
-	int bytesperline = src->bytesperline;
-	long int pos;
-	int x, y, i, blobXmin, blobXmax, blobYmin, blobYmax;
-
-	// Verificação de erros
-	if ((width <= 0) || (height <= 0) || (datasrc == NULL) || (datadst == NULL)) return 0;
-	if ((width != dst->width) || (height != dst->height) || (channels != dst->channels)) return 0;
-	if ((blobs == NULL) || (nblobs <= 0)) return 0;
-	if (channels != 3) return 0;
-
-	// Copia dados da imagem original para a nova imagem
-	memcpy(datadst, datasrc, bytesperline * height);
-
-	// Percorre cada blob
-	for (i = 0; i < nblobs; i++)
-	{
-		// Marcar o centro de massa
-		pos = blobs[i].yc * bytesperline + blobs[i].xc * channels;
-		datadst[pos] = (unsigned char)127;
-		datadst[pos + 1] = (unsigned char)127;
-		datadst[pos + 2] = (unsigned char)127;
-		datadst[pos - 1] = (unsigned char)255;
-		datadst[pos - 2] = (unsigned char)255;
-		datadst[pos - 3] = (unsigned char)255;
-		datadst[pos + 3] = (unsigned char)255;
-		datadst[pos + 4] = (unsigned char)255;
-		datadst[pos + 5] = (unsigned char)255;
-		datadst[pos - bytesperline] = (unsigned char)255;
-		datadst[pos - bytesperline + 1] = (unsigned char)255;
-		datadst[pos - bytesperline + 2] = (unsigned char)255;
-		datadst[pos + bytesperline] = (unsigned char)255;
-		datadst[pos + bytesperline + 1] = (unsigned char)255;
-		datadst[pos + bytesperline + 2] = (unsigned char)255;
-
-
-		// Coordenadas da caixa delimitadora
-		blobYmin = blobs[i].y;
-		blobYmax = blobYmin + blobs[i].height - 1;
-		blobXmin = blobs[i].x;
-		blobXmax = blobXmin + blobs[i].width - 1;
-
-		// Marcar a caixa delimitadora
-		// Limites verticais
-		for (y = blobYmin; y <= blobYmax; y++)
-		{
-			// Limite esquerdo
-			pos = y * bytesperline + blobXmin * channels;
-			datadst[pos] = (unsigned char)255;
-			datadst[pos + 1] = (unsigned char)255;
-			datadst[pos + 2] = (unsigned char)255;
-
-			// Limite direito
-			pos = y * bytesperline + blobXmax * channels;
-			datadst[pos] = (unsigned char)255;
-			datadst[pos + 1] = (unsigned char)255;
-			datadst[pos + 2] = (unsigned char)255;
-		}
-		// Limites horizontais
-		for (x = blobXmin; x <= blobXmax; x++)
-		{
-			// Limite superior
-			pos = blobYmin * bytesperline + x * channels;
-			datadst[pos] = (unsigned char)255;
-			datadst[pos + 1] = (unsigned char)255;
-			datadst[pos + 2] = (unsigned char)255;
-
-			// Limite inferior
-			pos = blobYmax * bytesperline + x * channels;
-			datadst[pos] = (unsigned char)255;
-			datadst[pos + 1] = (unsigned char)255;
-			datadst[pos + 2] = (unsigned char)255;
-		}
-	}
-
-	return 1;
-}
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//                    IDENTIFICAÇÃO DE SINAIS
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-
-int vc_transit_signal_identifier(IVC* src)
-{
-	int size = src->height * src->bytesperline;
-
-	
 }

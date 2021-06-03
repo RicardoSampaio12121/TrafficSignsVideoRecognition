@@ -21,8 +21,12 @@ extern "C" {
 
 int main(void)
 {
-	IVC* imagemCamera, * imagemHSV, * imagemHSVsegmentada, * imagemHSVsemRuido, * imagemHSVcontornos, *imagemEtiquetada, *imagemMarcada;
+	IVC* imagemCamera, * imagemHSV, * imagemSegmentada, * imagemSemRuido, * imagemHSVcontornos, * imagemLabels, * imagemBoundingBox;
 	OVC* blobs;
+	int nblobs, maiorBlob;
+	Sinal sinal = INDEFINIDO;
+	Cor cor = AZUL;
+
 	// Classe cv::VideoCapture: classe para captura de vídeo a partir de câmaras ou para leitura de ficheiros de vídeo e sequências de imagens
 	cv::VideoCapture capture;
 
@@ -37,7 +41,7 @@ int main(void)
 
 	std::string str;
 	int key = 0, nCanais = 3;
-	int nlabels;
+
 
 	// usar câmara do pc em vez (só com 0 se der erro, sem ',' e frente)
 	// câmara 0. Se existisse outra câmara ligada por usb, seria a câmara 1
@@ -62,20 +66,17 @@ int main(void)
 	// Criação das imagens IVC
 	imagemCamera = vc_image_new(video.width, video.height, nCanais, 255);
 	imagemHSV = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
-	imagemHSVsegmentada = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
-	imagemHSVsemRuido = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
-	imagemHSVcontornos = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
-	imagemEtiquetada = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
-	imagemMarcada = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
+	imagemSegmentada = vc_image_new(imagemCamera->width, imagemCamera->height, 1, imagemCamera->levels);
+	imagemSemRuido = vc_image_new(imagemCamera->width, imagemCamera->height, 1, imagemCamera->levels);
+	imagemLabels = vc_image_new(imagemCamera->width, imagemCamera->height, 1, imagemCamera->levels);
+	imagemBoundingBox = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
+	//imagemHSVcontornos = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
 
-
-	int counter = 0;
 	cv::Mat frame;
 
 	// Fecha a captura/leitura de vídeo ao carregar na tecla q
 	while (key != 'q')
 	{
-		counter++;
 		/* Leitura de uma frame do vídeo */
 		capture.read(frame);
 
@@ -117,48 +118,85 @@ int main(void)
 		//// Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
 		memcpy(imagemCamera->data, frame.data, video.width * nCanais * video.height);
 
-
 		// Segmentar pela cor azul
 		//vc_bgr_get_blue_gray(image);
 
 		// Converter BGR para HSV
 		vc_bgr_to_hsv(imagemCamera, imagemHSV);
 
-		// Segmentar imagem HSV por cores azuis
-		vc_hsv_segmentation(imagemHSV, imagemHSVsegmentada, 192, 289, 10, 100, 15, 100);
+		// Segmentar imagem HSV
+		if (cor == AZUL) vc_hsv_segmentation(imagemHSV, imagemSegmentada, 192, 289, 10, 100, 15, 100);
+		else if (cor == VERMELHO) vc_hsv_red_segmentation(imagemHSV, imagemSegmentada, 0, 34, 335, 360, 30, 100, 35, 100);
 
 		// Eliminar ruído "salt-and-pepper"
-		vc_gray_lowpass_median_filter(imagemHSVsegmentada, imagemHSVsemRuido, 5);
+		vc_gray_lowpass_median_filter(imagemSegmentada, imagemSemRuido, 7);
+
+		// Etiquetar blobs da imagem
+		blobs = vc_binary_blob_labelling(imagemSemRuido, imagemLabels, &nblobs);
+		//printf("\nNumero de blobs: %d\n\n", nblobs);
+
+		// Calcular bounding box
+		vc_binary_blob_info(imagemLabels, blobs, nblobs, &maiorBlob);
+
+		// Marcar bounding box do blob com maior área (sinal)
+		vc_marcarMaiorBlob(imagemCamera, imagemBoundingBox, blobs, nblobs, maiorBlob);
+
 		
-		blobs = vc_binary_blob_labelling(imagemHSVsemRuido, imagemEtiquetada, &nlabels);
 
-		if (blobs)
+		// Não detetou o sinal (tentar a outra cor para a próxima frame)
+		if (blobs != NULL && blobs[maiorBlob].area < 5000)
 		{
-			puts("Tem blobs");
-			vc_binary_blob_info(imagemEtiquetada, blobs, nlabels);
-			for (int i = 0; i < nlabels; i++)
-			{
-				printf("-> Etiqueta %d\n", blobs[i].label);
-				printf("-> Area %d\n", blobs[i].area);
-				printf("-> XC %d\n", blobs[i].xc);
-				printf("-> XY %d\n\n", blobs[i].yc);
-
-			}
-
+			if (cor == AZUL) cor = VERMELHO;
+			else if (cor == VERMELHO) cor = AZUL;
 		}
+		// Detetou o sinal
+		else
+		{
+			// Identificar a forma do sinal de trânsito
 
+			sinal = vc_identificarSinal(blobs, nblobs, maiorBlob, cor);
 
-		vc_mark_blobs(imagemCamera, imagemMarcada, blobs, nlabels);
+			//printf("AREA DO MAIOR BLOB = %d\n\n", blobs[maiorBlob].area);
 
-		// Exibir contornos
-		vc_gray_edge_laplace(imagemHSVsemRuido, imagemHSVcontornos);
-
-
-		//// Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
-		memcpy(frame.data, imagemHSVsemRuido->data, video.width * nCanais * video.height);
+			// printf("SINAL = %d\n", sinal);
+			// PARA TESTAR
+			switch (sinal)
+			{
+			case (INDEFINIDO):
+				printf("INDEFINIDO\n\n");
+				break;
+			case (VIRAR_D):
+				printf("VIRAR A DIREITA\n\n");
+				break;
+			case (VIRAR_E):
+				printf("VIRAR A ESQUERDA\n\n");
+				break;
+			case (AUTOMOVEIS_MOTOCICLOS):
+				printf("Via reservada a automoveis e motociclos\n\n");
+				break;
+			case (AUTO_ESTRADA):
+				printf("ENTRADA PARA AUTO-ESTRADA\n\n");
+				break;
+			case (SENTIDO_PROIBIDO):
+				printf("SENTIDO PROIBIDO!\n\n");
+				break;
+			case (STOP):
+				printf("STOP!\n\n");
+				break;
+			default:
+				printf("!!!ERRO!!!\n\n");
+				break;
+			}
+		}
 
 		free(blobs);
 
+		// Exibir contornos
+		//vc_gray_edge_laplace(imagemSemRuido, imagemHSVcontornos);
+
+		//// Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
+		//memcpy(frame.data, imagemHSVcontornos->data, video.width * nCanais * video.height);
+		memcpy(frame.data, imagemBoundingBox->data, video.width * nCanais * video.height);
 
 		/* Exibe a frame */
 		cv::imshow("VC - Video", frame);
@@ -171,9 +209,10 @@ int main(void)
 	//// Liberta a memória das imagens IVC
 	vc_image_free(imagemCamera);
 	vc_image_free(imagemHSV);
-	vc_image_free(imagemHSVsegmentada);
-	vc_image_free(imagemHSVsemRuido);
-	vc_image_free(imagemHSVcontornos);
+	vc_image_free(imagemSegmentada);
+	vc_image_free(imagemSemRuido);
+	vc_image_free(imagemLabels);
+	//vc_image_free(imagemHSVcontornos);
 
 	/* Fecha a janela */
 	cv::destroyWindow("VC - Video");
