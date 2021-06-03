@@ -1414,9 +1414,9 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs, int *maiorBlob)
 	int height = src->height;
 	int bytesperline = src->bytesperline;
 	int channels = src->channels;
-	int x, y, i, blobAreaMax, blobMaior;
+	int x, y, i;
 	long int pos;
-	int xmin, ymin, xmax, ymax;
+	int xmin, ymin, xmax, ymax, blobAreaMax, blobMaior;
 	long int sumx, sumy;
 
 	// Verificação de erros
@@ -1425,14 +1425,32 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs, int *maiorBlob)
 	if (!blobs) return 0;
 
 
-	// Inicializações para calcular a blob maior
-	blobAreaMax = blobs[0].area;
-	blobMaior = 0;
 
+	// Inicializações para calcular a blob maior
+	blobAreaMax = 0;
+	blobMaior = 0;
 
 	// Percorre cada blob
 	for (i = 0; i < nblobs; i++)
 	{
+		blobs[i].area = 0;
+
+		// Percorre cada píxel da imagem etiquetada
+		for (y = 1; y < height - 1; y++)
+		{
+			for (x = 1; x < width - 1; x++)
+			{
+				pos = y * bytesperline + x * channels;
+
+				// Se o píxel pertencer ao blob de que estamos à procura
+				if (data[pos] == blobs[i].label)
+				{
+					// Área (= somatório do nº de píxeis do blob)
+					blobs[i].area++;
+				}
+			}
+		}
+
 		// Compara com o maior até agora
 		if (blobs[i].area > blobAreaMax)
 		{
@@ -1444,66 +1462,64 @@ int vc_binary_blob_info(IVC* src, OVC* blobs, int nblobs, int *maiorBlob)
 
 	*maiorBlob = blobMaior;
 
+	// Inicialização nos extremos possíveis
+	xmin = width - 1;
+	ymin = height - 1;
+	xmax = 0;
+	ymax = 0;
 
-		// Inicialização nos extremos possíveis
-		xmin = width - 1;
-		ymin = height - 1;
-		xmax = 0;
-		ymax = 0;
+	sumx = 0;
+	sumy = 0;
 
-		sumx = 0;
-		sumy = 0;
+	blobs[blobMaior].area = 0;
 
-		blobs[blobMaior].area = 0;
-
-		// Percorre cada píxel da imagem etiquetada
-		for (y = 1; y < height - 1; y++)
+	// Percorre cada píxel da imagem etiquetada
+	for (y = 1; y < height - 1; y++)
+	{
+		for (x = 1; x < width - 1; x++)
 		{
-			for (x = 1; x < width - 1; x++)
+			pos = y * bytesperline + x * channels;
+
+			// Se o píxel pertencer ao blob de que estamos à procura
+			if (data[pos] == blobs[blobMaior].label)
 			{
-				pos = y * bytesperline + x * channels;
+				// Área (= somatório do nº de píxeis do blob)
+				blobs[blobMaior].area++;
 
-				// Se o píxel pertencer ao blob de que estamos à procura
-				if (data[pos] == blobs[blobMaior].label)
+				// Centro de Gravidade
+				sumx += x;
+				sumy += y;
+
+				// Bounding Box
+				if (xmin > x) xmin = x;
+				if (ymin > y) ymin = y;
+				if (xmax < x) xmax = x;
+				if (ymax < y) ymax = y;
+
+				// Perímetro (está a usar em "cruz", não conta os da diagonal
+				// Se pelo menos um dos quatro vizinhos não pertence ao mesmo label, então é um pixel de contorno
+				if ((data[pos - 1] != blobs[blobMaior].label) || (data[pos + 1] != blobs[blobMaior].label) || (data[pos - bytesperline] != blobs[blobMaior].label) || (data[pos + bytesperline] != blobs[blobMaior].label))
 				{
-					// Área (= somatório do nº de píxeis do blob)
-					blobs[blobMaior].area++;
-
-					// Centro de Gravidade
-					sumx += x;
-					sumy += y;
-
-					// Bounding Box
-					if (xmin > x) xmin = x;
-					if (ymin > y) ymin = y;
-					if (xmax < x) xmax = x;
-					if (ymax < y) ymax = y;
-
-					// Perímetro (está a usar em "cruz", não conta os da diagonal
-					// Se pelo menos um dos quatro vizinhos não pertence ao mesmo label, então é um pixel de contorno
-					if ((data[pos - 1] != blobs[blobMaior].label) || (data[pos + 1] != blobs[blobMaior].label) || (data[pos - bytesperline] != blobs[blobMaior].label) || (data[pos + bytesperline] != blobs[blobMaior].label))
-					{
-						blobs[blobMaior].perimeter++;
-					}
+					blobs[blobMaior].perimeter++;
 				}
 			}
 		}
+	}
 
-		// Bounding Box
-		blobs[blobMaior].x = xmin;
-		blobs[blobMaior].y = ymin;
-		blobs[blobMaior].width = (xmax - xmin) + 1;
-		blobs[blobMaior].height = (ymax - ymin) + 1;
+	// Bounding Box
+	blobs[blobMaior].x = xmin;
+	blobs[blobMaior].y = ymin;
+	blobs[blobMaior].width = (xmax - xmin) + 1;
+	blobs[blobMaior].height = (ymax - ymin) + 1;
 
-		// Centro de Gravidade
-		//blobs[i].xc = (xmax - xmin) / 2;
-		//blobs[i].yc = (ymax - ymin) / 2; ** FALTA O round() em xc e yc
-		// x médio (média de todos os valores/coordenadas em x)
-		blobs[blobMaior].xc = sumx / MAX(blobs[blobMaior].area, 1); // Usa-se o MAX para nunca dar 0
-		// y médio (média de todos os valores/coordenadas em y)
-		blobs[blobMaior].yc = sumy / MAX(blobs[blobMaior].area, 1);
+	// Centro de Gravidade
+	//blobs[i].xc = (xmax - xmin) / 2;
+	//blobs[i].yc = (ymax - ymin) / 2; ** FALTA O round() em xc e yc
+	// x médio (média de todos os valores/coordenadas em x)
+	blobs[blobMaior].xc = sumx / MAX(blobs[blobMaior].area, 1); // Usa-se o MAX para nunca dar 0
+	// y médio (média de todos os valores/coordenadas em y)
+	blobs[blobMaior].yc = sumy / MAX(blobs[blobMaior].area, 1);
 	
-
 
 	return 1;
 }
