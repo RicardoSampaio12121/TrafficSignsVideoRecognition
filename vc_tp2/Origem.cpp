@@ -1,7 +1,8 @@
 /*
-Author: Filipe Gajo
-Author: Ricardo Sampaio
-Author: Claudio Silva
+Autores:
+-Filipe Gajo
+-Ricardo Sampaio
+-Cláudio Silva
 */
 
 // Headers "normais"
@@ -9,8 +10,8 @@ Author: Claudio Silva
 #include <string> // Classe string do C++
 
 // Módulos do openCV
-#include <opencv2\opencv.hpp> // Funções principais do OpenCV (Open Source Computer Vision Library)
-#include <opencv2\core.hpp> // Estruturas de dados, operações sobre arrays, XML e desenho
+#include <opencv2\opencv.hpp>  // Funções principais do OpenCV (Open Source Computer Vision Library)
+#include <opencv2\core.hpp>	   // Estruturas de dados, operações sobre arrays, XML e desenho
 #include <opencv2\highgui.hpp> // Funções de interface com o utilizador
 #include <opencv2\videoio.hpp> // Funções de leitura/escrita de vídeo
 
@@ -21,7 +22,7 @@ extern "C" {
 
 int main(void)
 {
-	IVC* imagemCamera, * imagemHSV, * imagemSegmentada, * imagemSemRuido, * imagemHSVcontornos, * imagemLabels, * imagemBoundingBox;
+	IVC* imagemCamera, * imagemHSV, * imagemSegmentada, * imagemSemRuido, * imagemLabels, * imagemBoundingBox;
 	OVC* blobs;
 	int nblobs, maiorBlob;
 	Sinal sinal = INDEFINIDO;
@@ -39,9 +40,8 @@ int main(void)
 		int nframe; // Nº da frame atual
 	} video;
 
-	std::string str;
+	std::string informacaoSinal = std::string("");
 	int key = 0, nCanais = 3;
-
 
 	// usar câmara do pc em vez (só com 0 se der erro, sem ',' e frente)
 	// câmara 0. Se existisse outra câmara ligada por usb, seria a câmara 1
@@ -70,7 +70,6 @@ int main(void)
 	imagemSemRuido = vc_image_new(imagemCamera->width, imagemCamera->height, 1, imagemCamera->levels);
 	imagemLabels = vc_image_new(imagemCamera->width, imagemCamera->height, 1, imagemCamera->levels);
 	imagemBoundingBox = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
-	//imagemHSVcontornos = vc_image_new(imagemCamera->width, imagemCamera->height, imagemCamera->channels, imagemCamera->levels);
 
 	cv::Mat frame;
 
@@ -87,39 +86,10 @@ int main(void)
 		/* Número da frame a processar */
 		video.nframe = (int)capture.get(cv::CAP_PROP_POS_FRAMES);
 
-		/*
-		// Exemplo de inserção de texto na frame ---------------------------------------------------------------------------------
-
-		// .append("sufixo"): extende a string acrescentando caracteres no fim do seu valor atual
-		// std::to_string(número): converte um valor numérico numa string (std::string)
-		str = std::string("RESOLUCAO: ").append(std::to_string(video.width)).append("x").append(std::to_string(video.height));
-
-		// putText: escreve texto sobre o vídeo
-		// cv::putText(imagem, texto, ponto, fonte, tamanhoFonte, vetorCor, espessuraTexto)
-		// contorno a preto (espessura = 2)
-		cv::putText(frame, str, cv::Point(20, 25), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 0), 2);
-		// texto branco interior (espessura = 1)
-		cv::putText(frame, str, cv::Point(20, 25), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 255), 1);
-		str = std::string("TOTAL DE FRAMES: ").append(std::to_string(video.ntotalframes));
-		cv::putText(frame, str, cv::Point(20, 50), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 0), 2);
-		cv::putText(frame, str, cv::Point(20, 50), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 255), 1);
-		str = std::string("FRAME RATE: ").append(std::to_string(video.fps));
-		cv::putText(frame, str, cv::Point(20, 75), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 0), 2);
-		cv::putText(frame, str, cv::Point(20, 75), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 255), 1);
-		str = std::string("N. DA FRAME: ").append(std::to_string(video.nframe));
-		cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 0), 2);
-		cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 255), 1);
-
-		// -----------------------------------------------------------------------------------------------------------------------
-		*/
-
 		// !CUIDADO! cv::Mat está em BGR ao contrário de IVC que está em RGB !CUIDADO!
 
 		//// Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
 		memcpy(imagemCamera->data, frame.data, video.width * nCanais * video.height);
-
-		// Segmentar pela cor azul
-		//vc_bgr_get_blue_gray(image);
 
 		// Converter BGR para HSV
 		vc_bgr_to_hsv(imagemCamera, imagemHSV);
@@ -133,70 +103,68 @@ int main(void)
 
 		// Etiquetar blobs da imagem
 		blobs = vc_binary_blob_labelling(imagemSemRuido, imagemLabels, &nblobs);
-		//printf("\nNumero de blobs: %d\n\n", nblobs);
 
-		// Calcular bounding box
-		vc_binary_blob_info(imagemLabels, blobs, nblobs, &maiorBlob);
+		// Procurar o maior blob
+		vc_encontrarMaiorBlob(imagemLabels, blobs, nblobs, &maiorBlob);
 
-		// Marcar bounding box do blob com maior área (sinal)
-		vc_marcarMaiorBlob(imagemCamera, imagemBoundingBox, blobs, nblobs, maiorBlob);
-
-		
-
-		// Não detetou o sinal (tentar a outra cor para a próxima frame)
-		if (blobs != NULL && blobs[maiorBlob].area < 5000)
-		{
+		// Verificar se o maior blob tem tamanho suficiente para ser um sinal de trânsito
+		if (blobs != NULL && blobs[maiorBlob].area < 6000)
+		{ // Não detetou o sinal (tentar a outra cor para a próxima frame)
 			if (cor == AZUL) cor = VERMELHO;
 			else if (cor == VERMELHO) cor = AZUL;
 		}
 		// Detetou o sinal
 		else
 		{
-			// Identificar a forma do sinal de trânsito
+			// Cálculos de medidas do maior blob
+			vc_maiorBlob_info(imagemLabels, blobs, nblobs, maiorBlob);
 
+			// Marcar bounding box e centro de massa do maior blob
+			vc_marcarMaiorBlob(imagemCamera, imagemBoundingBox, blobs, nblobs, maiorBlob);
+
+			// Identificar o sinal de trânsito
 			sinal = vc_identificarSinal(blobs, nblobs, maiorBlob, cor);
 
-			//printf("AREA DO MAIOR BLOB = %d\n\n", blobs[maiorBlob].area);
-
-			// printf("SINAL = %d\n", sinal);
-			// PARA TESTAR
+			// Escolher o texto que vai aparecer no ecrã de acordo com o sinal identificado
 			switch (sinal)
 			{
 			case (INDEFINIDO):
-				printf("INDEFINIDO\n\n");
 				break;
 			case (VIRAR_D):
-				printf("VIRAR A DIREITA\n\n");
+				informacaoSinal = std::string("Obrigatorio Virar a Direita");
 				break;
 			case (VIRAR_E):
-				printf("VIRAR A ESQUERDA\n\n");
+				informacaoSinal = std::string("Obrigatorio Virar a Esquerda");
 				break;
 			case (AUTOMOVEIS_MOTOCICLOS):
-				printf("Via reservada a automoveis e motociclos\n\n");
+				informacaoSinal = std::string("Via Reservada a Automoveis e Motociclos");
 				break;
 			case (AUTO_ESTRADA):
-				printf("ENTRADA PARA AUTO-ESTRADA\n\n");
+				informacaoSinal = std::string("Entrada para Auto-Estrada");
 				break;
 			case (SENTIDO_PROIBIDO):
-				printf("SENTIDO PROIBIDO!\n\n");
+				informacaoSinal = std::string("Sentido Proibido");
 				break;
 			case (STOP):
-				printf("STOP!\n\n");
+				informacaoSinal = std::string("Paragem Obrigatoria");
 				break;
 			default:
-				printf("!!!ERRO!!!\n\n");
 				break;
 			}
+
+			//// Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
+			memcpy(frame.data, imagemBoundingBox->data, video.width * nCanais * video.height);
+
+			// ESCREVER NO VÍDEO
+			// putText: escreve texto sobre o vídeo
+			// cv::putText(imagem, texto, ponto, fonte, tamanhoFonte, vetorCor, espessuraTexto)
+			// contorno a preto (espessura = 2)
+			cv::putText(frame, informacaoSinal, cv::Point(20, 25), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0), 2);
+			// texto branco interior (espessura = 1)
+			cv::putText(frame, informacaoSinal, cv::Point(20, 25), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(255, 255, 255), 1);
 		}
 
 		free(blobs);
-
-		// Exibir contornos
-		//vc_gray_edge_laplace(imagemSemRuido, imagemHSVcontornos);
-
-		//// Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
-		//memcpy(frame.data, imagemHSVcontornos->data, video.width * nCanais * video.height);
-		memcpy(frame.data, imagemBoundingBox->data, video.width * nCanais * video.height);
 
 		/* Exibe a frame */
 		cv::imshow("VC - Video", frame);
@@ -212,7 +180,7 @@ int main(void)
 	vc_image_free(imagemSegmentada);
 	vc_image_free(imagemSemRuido);
 	vc_image_free(imagemLabels);
-	//vc_image_free(imagemHSVcontornos);
+	vc_image_free(imagemBoundingBox);
 
 	/* Fecha a janela */
 	cv::destroyWindow("VC - Video");
